@@ -19,7 +19,7 @@ import { PlusIcon, SearchIcon, FilterIcon, PackageIcon, ShoppingCartIcon, Dollar
 import { toast } from 'sonner'
 
 function App() {
-  const { products, loading, error, fetchProducts, createProduct, getUniqueValues } = useProducts()
+  const { products, loading, error, fetchProducts, createProduct, deleteProduct, getUniqueValues } = useProducts()
   const [searchTerm, setSearchTerm] = useState('')
   const [filters, setFilters] = useState({})
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
@@ -163,6 +163,34 @@ function App() {
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  const handleAIAnalysis = (analysis) => {
+    // Auto-fill form with AI analysis results
+    setFormData(prev => ({
+      ...prev,
+      Title: analysis.title || prev.Title,
+      'Body (HTML)': analysis.description || prev['Body (HTML)'],
+      Vendor: analysis.vendor || prev.Vendor,
+      Type: analysis.type || prev.Type,
+      Tags: analysis.tags || prev.Tags,
+      'Variant Price': analysis.price || prev['Variant Price'],
+      'Variant Grams': analysis.weight || prev['Variant Grams'],
+      'Variant SKU': analysis.sku || prev['Variant SKU'],
+      'Image Alt Text': `${analysis.title} - ${analysis.vendor}` || prev['Image Alt Text']
+    }))
+
+    // Add new vendor/type if they don't exist
+    if (analysis.vendor && !vendors.includes(analysis.vendor)) {
+      handleAddVendor(analysis.vendor)
+    }
+    if (analysis.type && !types.includes(analysis.type)) {
+      handleAddType(analysis.type)
+    }
+
+    toast.success('🤖 Form auto-filled with AI analysis!', {
+      description: 'Please review and adjust the details before saving.'
+    })
   }
 
   const handleProductClick = (product) => {
@@ -357,6 +385,7 @@ function App() {
                         onChange={(value) => handleInputChange('Image Src', value)}
                         altText={formData['Image Alt Text']}
                         onAltTextChange={(value) => handleInputChange('Image Alt Text', value)}
+                        onAIAnalysis={handleAIAnalysis}
                       />
                     </div>
                   </div>
@@ -639,6 +668,7 @@ function App() {
         product={selectedProduct}
         isOpen={isDetailsModalOpen}
         onClose={() => setIsDetailsModalOpen(false)}
+        onDelete={deleteProduct}
       />
 
       {/* Toast Notifications */}

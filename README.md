@@ -7,6 +7,7 @@ A modern, professional product management interface built with React, Vite, Tail
 - **Product Grid** - Responsive grid displaying all products with search and filtering
 - **Add Products** - Comprehensive modal form with organized sections
 - **Product Details** - Detailed product view modal with all information
+- **Delete Products** - Safe product deletion with confirmation and toast feedback
 - **Real-time Search** - Search products by title, handle, or tags
 - **Advanced Filters** - Filter by vendor, type, and publication status
 - **Vendor Management** - Add new vendors with searchable dropdown
@@ -14,6 +15,7 @@ A modern, professional product management interface built with React, Vite, Tail
 - **Image Upload** - Drag & drop file upload with preview
 - **Toast Notifications** - Success/error feedback for all actions
 - **Supabase Integration** - Real-time database operations
+- **Environment Variables** - Secure credential management
 
 ## 🛠 Tech Stack
 
@@ -37,19 +39,30 @@ cd lumora-admin
 npm install
 ```
 
-3. Start the development server:
+3. Create environment variables:
+```bash
+# Copy the example file
+cp env.example .env
+
+# Edit .env file with your Supabase credentials:
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your_anon_key_here
+```
+
+4. Start the development server:
 ```bash
 npm run dev
 ```
 
-4. Open your browser and navigate to `http://localhost:5173`
+5. Open your browser and navigate to `http://localhost:5173`
 
 ## 🔧 Configuration
 
 ### Supabase Setup
 
-The application connects to Supabase using the following configuration:
-- **URL:** `https://fuaafkifukvkbpyaxafy.supabase.co`
+The application connects to Supabase using environment variables:
+- **URL:** Set in `VITE_SUPABASE_URL`
+- **Anonymous Key:** Set in `VITE_SUPABASE_ANON_KEY`
 - **Table:** `shopify_products_complete`
 
 Make sure your Supabase table has the following structure:

@@ -1,16 +1,51 @@
 import React, { useState } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { } from 'lucide-react'
+import { TrashIcon, EditIcon } from 'lucide-react'
+import { toast } from 'sonner'
 
-export function ProductDetailsModal({ product, isOpen, onClose }) {
+export function ProductDetailsModal({ product, isOpen, onClose, onDelete }) {
   const [selectedImage, setSelectedImage] = useState(0)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   if (!product) return null
+
+  const handleDelete = async () => {
+    if (!onDelete) return
+    
+    setIsDeleting(true)
+    try {
+      toast.loading('Deleting product...', { id: 'delete-product' })
+      
+      const result = await onDelete(product.Handle)
+      
+      if (result.success) {
+        toast.success('Product deleted successfully!', { 
+          id: 'delete-product',
+          description: `${product.Title} has been removed from your store.`
+        })
+        onClose()
+      } else {
+        toast.error('Failed to delete product', {
+          id: 'delete-product',
+          description: result.error || 'An error occurred while deleting the product.'
+        })
+      }
+    } catch (error) {
+      toast.error('Failed to delete product', {
+        id: 'delete-product',
+        description: 'An unexpected error occurred.'
+      })
+    } finally {
+      setIsDeleting(false)
+      setShowDeleteConfirm(false)
+    }
+  }
 
   const formatPrice = (price) => {
     if (!price) return '$0.00'
@@ -267,6 +302,51 @@ export function ProductDetailsModal({ product, isOpen, onClose }) {
              </div>
           </div>
         </div>
+        
+        {/* Action Buttons */}
+        <DialogFooter className="border-t pt-4">
+          <div className="flex justify-between w-full">
+            <div className="flex gap-2">
+              {!showDeleteConfirm ? (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  disabled={isDeleting}
+                  className="gap-2"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                  Delete Product
+                </Button>
+              ) : (
+                <div className="flex gap-2 items-center">
+                  <span className="text-sm text-muted-foreground">Are you sure?</span>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    className="gap-2"
+                  >
+                    {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowDeleteConfirm(false)}
+                    disabled={isDeleting}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+            </div>
+            
+            <Button variant="outline" onClick={onClose} disabled={isDeleting}>
+              Close
+            </Button>
+          </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

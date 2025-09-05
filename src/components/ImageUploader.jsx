@@ -5,8 +5,9 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { UploadIcon, XIcon, ImageIcon, LinkIcon } from 'lucide-react'
+import { AIProductAnalyzer } from './AIProductAnalyzer'
 
-export function ImageUploader({ value, onChange, onAltTextChange, altText = '' }) {
+export function ImageUploader({ value, onChange, onAltTextChange, altText = '', onAIAnalysis }) {
   const [dragActive, setDragActive] = useState(false)
   const fileInputRef = useRef(null)
 
@@ -128,6 +129,15 @@ export function ImageUploader({ value, onChange, onAltTextChange, altText = '' }
             placeholder="Descriptive alt text for accessibility"
           />
         </div>
+      )}
+
+      {/* AI Product Analyzer */}
+      {value && (
+        <AIProductAnalyzer
+          imageUrl={value}
+          onAnalysisComplete={onAIAnalysis}
+          onError={(error) => console.error('AI Analysis Error:', error)}
+        />
       )}
     </div>
   )

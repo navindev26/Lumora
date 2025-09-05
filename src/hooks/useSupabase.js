@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { useState, useEffect, useCallback } from 'react'
 
-const supabase = createClient(
-  'https://fuaafkifukvkbpyaxafy.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1YWFma2lmdWt2a2JweWF4YWZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ0NzMxMTYsImV4cCI6MjA3MDA0OTExNn0.STXSpWSC6ETuKxeRQkHU86eIKRQB1zCKGGwKbT2xx1E'
-)
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://fuaafkifukvkbpyaxafy.supabase.co'
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1YWFma2lmdWt2a2JweWF4YWZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ0NzMxMTYsImV4cCI6MjA3MDA0OTExNn0.STXSpWSC6ETuKxeRQkHU86eIKRQB1zCKGGwKbT2xx1E'
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export function useProducts() {
   const [products, setProducts] = useState([])
@@ -244,19 +244,20 @@ export function useProducts() {
     }
   }
 
-  const deleteProduct = async (id) => {
+  const deleteProduct = async (handle) => {
     try {
       setError(null)
       
+      // Delete by handle since that's what we have in the UI
       const { error: deleteError } = await supabase
         .from('shopify_products_complete')
         .delete()
-        .eq('id', id)
+        .eq('Handle', handle)
 
       if (deleteError) throw deleteError
 
-      // Refresh products list
-      await fetchProducts()
+      // Remove from current products list immediately for better UX
+      setProducts(prev => prev.filter(product => product.Handle !== handle))
       
       return { success: true }
     } catch (err) {
