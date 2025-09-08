@@ -4,17 +4,24 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Progress } from '@/components/ui/progress'
-import { BrainIcon, ImageIcon, CheckIcon, AlertCircleIcon, SparklesIcon } from 'lucide-react'
+import { BrainIcon, ImageIcon, CheckIcon, AlertCircleIcon, SparklesIcon, EditIcon } from 'lucide-react'
 import { toast } from 'sonner'
+import { ProductForm } from './ProductForm'
 
-export function AIProductAnalyzer({ imageUrl, onAnalysisComplete, onError }) {
+export function AIProductAnalyzer({ imageUrl, imageUrls, onAnalysisComplete, onError, compact = false, onProductAdded, isWaitingForImages = false }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysis, setAnalysis] = useState(null)
   const [confidence, setConfidence] = useState(0)
+  const [showProductForm, setShowProductForm] = useState(false)
+  
+  // Determine if we're working with multiple images
+  const isMultiImage = imageUrls && imageUrls.length > 1
+  const totalImages = imageUrls ? imageUrls.length : (imageUrl ? 1 : 0)
+  const allImageUrls = imageUrls || (imageUrl ? [imageUrl] : [])
 
   const analyzeProduct = async () => {
-    if (!imageUrl) {
-      toast.error('No image provided for analysis')
+    if (!imageUrl && (!imageUrls || imageUrls.length === 0)) {
+      toast.error('No images provided for analysis')
       return
     }
 
@@ -22,24 +29,40 @@ export function AIProductAnalyzer({ imageUrl, onAnalysisComplete, onError }) {
     setAnalysis(null)
     
     try {
-      toast.loading('🤖 AI analyzing product image...', { id: 'ai-analysis' })
+      const analysisMessage = isMultiImage 
+        ? `🤖 AI analyzing ${totalImages} product images...`
+        : '🤖 AI analyzing product image...'
+      
+      toast.loading(analysisMessage, { id: 'ai-analysis' })
+
+      // Prepare request body for single or multiple images
+      const requestBody = isMultiImage 
+        ? { imageUrls: imageUrls, action: 'analyze-only' }
+        : { imageUrl: imageUrl, action: 'analyze-only' }
 
       // Call the Supabase Edge Function
-      const response = await fetch('/functions/v1/analyze-product-image', {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-product-image`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
         },
-        body: JSON.stringify({
-          imageUrl: imageUrl,
-          action: 'analyze-only'
-        })
+        body: JSON.stringify(requestBody)
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Analysis failed')
+        let errorMessage = 'Analysis failed'
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error || errorMessage
+        } catch {
+          if (response.status === 404) {
+            errorMessage = 'AI Analysis service is not configured. Please set up OpenAI API key.'
+          } else {
+            errorMessage = `HTTP ${response.status}: ${response.statusText}`
+          }
+        }
+        throw new Error(errorMessage)
       }
 
       const result = await response.json()
@@ -48,13 +71,24 @@ export function AIProductAnalyzer({ imageUrl, onAnalysisComplete, onError }) {
         setAnalysis(result.analysis)
         setConfidence(result.analysis.confidence || 85)
         
-        toast.success('🎉 AI analysis complete!', {
+        const successMessage = isMultiImage
+          ? `🎉 Multi-image AI analysis complete! Analyzed ${totalImages} images for comprehensive results.`
+          : '🎉 AI analysis complete!'
+        
+        toast.success(successMessage, {
           id: 'ai-analysis',
-          description: 'Product details have been analyzed and populated.'
+          description: isMultiImage 
+            ? 'Product details analyzed from multiple angles for higher accuracy.'
+            : 'Product details have been analyzed and populated.'
         })
 
         // Pass the analysis back to parent component
         onAnalysisComplete?.(result.analysis)
+        
+        // In compact mode, automatically open the product form
+        if (compact) {
+          setShowProductForm(true)
+        }
       } else {
         throw new Error('Invalid response from AI analysis')
       }
@@ -62,7 +96,9 @@ export function AIProductAnalyzer({ imageUrl, onAnalysisComplete, onError }) {
       console.error('AI Analysis Error:', error)
       toast.error('AI analysis failed', {
         id: 'ai-analysis',
-        description: error.message || 'Please try again or fill fields manually.'
+        description: error.message.includes('not configured') 
+          ? 'AI Analysis requires OpenAI API key setup in Supabase Edge Functions.'
+          : error.message || 'Please try again or fill fields manually.'
       })
       onError?.(error)
     } finally {
@@ -75,50 +111,48 @@ export function AIProductAnalyzer({ imageUrl, onAnalysisComplete, onError }) {
     return `$${parseFloat(price).toFixed(2)}`
   }
 
+  // Compact mode - just the action button
+  if (compact) {
+    return (
+      <>
+        <Button
+          onClick={analyzeProduct}
+          disabled={isAnalyzing || isWaitingForImages || (!imageUrl && (!imageUrls || imageUrls.length === 0))}
+          className="gap-2"
+          size="sm"
+        >
+          {isWaitingForImages ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent" />
+              Preparing...
+            </>
+          ) : isAnalyzing ? (
+            <>
+              <SparklesIcon className="w-4 h-4 animate-pulse" />
+              Analyzing...
+            </>
+          ) : (
+            <>
+              <BrainIcon className="w-4 h-4" />
+              Analyze & Add Product
+            </>
+          )}
+        </Button>
+        
+        {/* Product Form Dialog */}
+        <ProductForm 
+          open={showProductForm}
+          onOpenChange={setShowProductForm}
+          analysisData={analysis}
+          imageUrls={allImageUrls}
+          onProductAdded={onProductAdded}
+        />
+      </>
+    )
+  }
+
   return (
     <div className="space-y-4">
-      {/* AI Analysis Trigger */}
-      <Card className="border-dashed border-primary/30">
-        <CardHeader className="text-center pb-4">
-          <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-3">
-            <BrainIcon className="w-6 h-6 text-primary" />
-          </div>
-          <CardTitle className="text-lg">AI Product Analysis</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Let AI analyze your product image and auto-fill the details
-          </p>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <Button
-            onClick={analyzeProduct}
-            disabled={isAnalyzing || !imageUrl}
-            className="w-full gap-2"
-            size="lg"
-          >
-            {isAnalyzing ? (
-              <>
-                <SparklesIcon className="w-4 h-4 animate-pulse" />
-                Analyzing Image...
-              </>
-            ) : (
-              <>
-                <BrainIcon className="w-4 h-4" />
-                Analyze with AI
-              </>
-            )}
-          </Button>
-          
-          {isAnalyzing && (
-            <div className="mt-4 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span>AI Processing...</span>
-                <span>~30 seconds</span>
-              </div>
-              <Progress value={confidence} className="h-2" />
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Analysis Results */}
       {analysis && (
@@ -129,10 +163,18 @@ export function AIProductAnalyzer({ imageUrl, onAnalysisComplete, onError }) {
                 <CheckIcon className="w-5 h-5 text-green-600" />
                 AI Analysis Results
               </CardTitle>
-              <Badge variant="secondary" className="gap-1">
-                <SparklesIcon className="w-3 h-3" />
-                {analysis.confidence}% confident
-              </Badge>
+              <div className="flex gap-2">
+                <Badge variant="secondary" className="gap-1">
+                  <SparklesIcon className="w-3 h-3" />
+                  {analysis.confidence}% confident
+                </Badge>
+                {analysis.imagesAnalyzed > 1 && (
+                  <Badge variant="outline" className="gap-1">
+                    <ImageIcon className="w-3 h-3" />
+                    {analysis.imagesAnalyzed} images analyzed
+                  </Badge>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -194,22 +236,41 @@ export function AIProductAnalyzer({ imageUrl, onAnalysisComplete, onError }) {
             </div>
 
             {/* Confidence Indicator */}
-            <div className="flex items-center gap-2 text-sm">
-              {analysis.confidence >= 80 ? (
-                <CheckIcon className="w-4 h-4 text-green-600" />
-              ) : (
-                <AlertCircleIcon className="w-4 h-4 text-yellow-600" />
-              )}
-              <span className="text-muted-foreground">
-                {analysis.confidence >= 80 
-                  ? 'High confidence analysis - ready for review'
-                  : 'Medium confidence - please verify details'
-                }
-              </span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm">
+                {analysis.confidence >= 80 ? (
+                  <CheckIcon className="w-4 h-4 text-green-600" />
+                ) : (
+                  <AlertCircleIcon className="w-4 h-4 text-yellow-600" />
+                )}
+                <span className="text-muted-foreground">
+                  {analysis.confidence >= 80 
+                    ? 'High confidence analysis - ready for review'
+                    : 'Medium confidence - please verify details'
+                  }
+                </span>
+              </div>
+              
+              <Button 
+                onClick={() => setShowProductForm(true)}
+                className="gap-2"
+              >
+                <EditIcon className="w-4 h-4" />
+                Add Product
+              </Button>
             </div>
           </CardContent>
         </Card>
       )}
+
+      {/* Product Form Dialog */}
+      <ProductForm 
+        open={showProductForm}
+        onOpenChange={setShowProductForm}
+        analysisData={analysis}
+        imageUrls={allImageUrls}
+        onProductAdded={onProductAdded}
+      />
     </div>
   )
 } 

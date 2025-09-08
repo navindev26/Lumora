@@ -1,10 +1,21 @@
 import { createClient } from '@supabase/supabase-js'
 import { useState, useEffect, useCallback } from 'react'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://fuaafkifukvkbpyaxafy.supabase.co'
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1YWFma2lmdWt2a2JweWF4YWZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ0NzMxMTYsImV4cCI6MjA3MDA0OTExNn0.STXSpWSC6ETuKxeRQkHU86eIKRQB1zCKGGwKbT2xx1E'
+// Initialize Supabase client with proper error handling
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+let supabase = null
+if (supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('https://')) {
+  try {
+    supabase = createClient(supabaseUrl, supabaseAnonKey)
+  } catch (error) {
+    console.warn('Failed to initialize Supabase client:', error)
+    supabase = null
+  }
+} else {
+  console.info('Supabase not configured, using static data for development')
+}
 
 export function useProducts() {
   const [products, setProducts] = useState([])
@@ -96,20 +107,20 @@ export function useProducts() {
       try {
         let query = supabase.from('shopify_products_complete').select('*')
 
-        // Apply search filter
+        // Apply search filter with quoted column names
         if (searchTerm) {
-          query = query.or(`Title.ilike.%${searchTerm}%,Handle.ilike.%${searchTerm}%,Tags.ilike.%${searchTerm}%`)
+          query = query.or(`"Title".ilike.%${searchTerm}%,"Handle".ilike.%${searchTerm}%,"Tags".ilike.%${searchTerm}%`)
         }
 
-        // Apply filters
+        // Apply filters with quoted column names
         if (filters.vendor && filters.vendor !== 'all-vendors') {
-          query = query.eq('Vendor', filters.vendor)
+          query = query.eq('"Vendor"', filters.vendor)
         }
         if (filters.type && filters.type !== 'all-types') {
-          query = query.eq('Type', filters.type)
+          query = query.eq('"Type"', filters.type)
         }
         if (filters.published !== undefined && filters.published !== 'all-status') {
-          query = query.eq('Published', filters.published === 'true')
+          query = query.eq('"Published"', filters.published === 'true')
         }
 
         // Order by most recent first
@@ -183,17 +194,40 @@ export function useProducts() {
     try {
       setError(null)
       
-      // Generate handle from title if not provided
-      if (!productData.Handle && productData.Title) {
-        productData.Handle = productData.Title
+      // Generate handle from title - ensure it's not empty and not too long
+      let handle = productData.Handle || ''
+      if (!handle && productData.Title) {
+        handle = productData.Title
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/^-+|-+$/g, '')
+          .substring(0, 250) // Ensure it's under 255 character limit
+      }
+      
+      // Ensure handle is not empty
+      if (!handle) {
+        handle = `product-${Date.now()}`
+      }
+      
+      productData.Handle = handle
+
+      // Ensure Title is not empty
+      if (!productData.Title || productData.Title.trim() === '') {
+        throw new Error('Product title is required')
+      }
+
+      // Validate image URL - don't allow blob URLs
+      if (productData['Image Src'] && productData['Image Src'].startsWith('blob:')) {
+        console.warn('Removing blob URL from product data')
+        productData['Image Src'] = ''
+        productData['Image Alt Text'] = ''
       }
 
       // Clean up numeric fields - convert empty strings to null
       const cleanedData = {
         ...productData,
+        Title: productData.Title.trim(), // Ensure title is trimmed
+        Handle: handle, // Use the generated handle
         'Variant Price': productData['Variant Price'] === '' ? null : parseFloat(productData['Variant Price']) || null,
         'Variant Compare At Price': productData['Variant Compare At Price'] === '' ? null : parseFloat(productData['Variant Compare At Price']) || null,
         'Variant Grams': productData['Variant Grams'] === '' ? null : parseFloat(productData['Variant Grams']) || null,
@@ -208,7 +242,25 @@ export function useProducts() {
         .insert([cleanedData])
         .select()
 
-      if (insertError) throw insertError
+      if (insertError) {
+        console.error('Supabase insert error:', insertError)
+        let errorMessage = insertError.message
+        
+        // Provide more specific error messages
+        if (insertError.message.includes('duplicate key')) {
+          errorMessage = 'A product with this handle already exists. Please use a different title.'
+        } else if (insertError.message.includes('violates not-null')) {
+          errorMessage = 'Required fields are missing. Please check your input.'
+        } else if (insertError.message.includes('violates check')) {
+          errorMessage = 'Invalid data format. Please check your input values.'
+        } else if (insertError.message.includes('invalid input syntax')) {
+          errorMessage = 'Invalid data format. Please check numeric fields.'
+        } else if (insertError.message.includes('string did not match')) {
+          errorMessage = 'Invalid format in one of the fields. Please check your input.'
+        }
+        
+        throw new Error(errorMessage)
+      }
 
       // Refresh the product list to show the new product
       await fetchProducts()
@@ -267,18 +319,39 @@ export function useProducts() {
     }
   }
 
-  const getUniqueValues = useCallback(async (column) => {
-    // Return static values to prevent API calls
-    if (column === 'Vendor') {
-      return ['GNC', 'Harney & Sons', 'Himalayan Organic', 'Wellbeing Nutrition']
+  const getUniqueValues = useCallback(async () => {
+    try {
+      // Get unique vendors and types from database
+      const { data: vendorData } = await supabase
+        .from('shopify_products_complete')
+        .select('"Vendor"')
+        .not('"Vendor"', 'is', null)
+        .neq('"Vendor"', '')
+
+      const { data: typeData } = await supabase
+        .from('shopify_products_complete')
+        .select('"Type"')
+        .not('"Type"', 'is', null)
+        .neq('"Type"', '')
+
+      const vendors = [...new Set(vendorData?.map(item => item.Vendor).filter(Boolean))] || []
+      const types = [...new Set(typeData?.map(item => item.Type).filter(Boolean))] || []
+
+      return { vendors, types }
+    } catch (error) {
+      console.warn('Error fetching unique values:', error)
+      // Fallback to static values
+      return {
+        vendors: ['GNC', 'Harney & Sons', 'Himalayan Organic', 'Wellbeing Nutrition', 'HealthyHey Foods LLP'],
+        types: ['Supplement', 'Tea', 'Vitamin', 'Protein']
+      }
     }
-    if (column === 'Type') {
-      return ['Supplement', 'Tea', 'Vitamin', 'Protein']
-    }
-    return []
   }, [])
 
-  // Remove automatic loading - let components control when to load
+  // Auto-fetch products on mount
+  useEffect(() => {
+    fetchProducts()
+  }, [fetchProducts])
 
   return {
     products,

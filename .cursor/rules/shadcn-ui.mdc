@@ -1,0 +1,34 @@
+---
+alwaysApply: true
+---
+
+# shadcn/ui Component Rules
+
+## Usage Rule
+When asked to use shadcn components, use the MCP server.
+
+## Planning Rule
+When asked to plan using anything related to shadcn:
+
+- Use the MCP server during planning
+- Apply components wherever components are applicable
+- Use whole blocks where possible (e.g., login page, calendar)
+
+## Implementation Rule
+When implementing:
+
+- First call the demo tool to see how it is used
+- Then implement it so that it is implemented correctly
+
+## MCP Server Integration
+- Always use `mcp_shadcn-ui_get_component` to fetch component source code
+- Use `mcp_shadcn-ui_get_component_demo` to see usage examples
+- Use `mcp_shadcn-ui_list_components` to explore available components
+- Use `mcp_shadcn-ui_get_block` for complete UI blocks
+- Use `mcp_shadcn-ui_list_blocks` to see available blocks
+
+## Best Practices
+- Understand the component through demo before implementing
+- Follow exact implementation patterns from demos
+- Prefer complete blocks over individual components when building pages
+- Integrate with existing design system (monochrome theme, pill vs rectangular buttons)
