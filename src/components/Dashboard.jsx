@@ -71,7 +71,7 @@ export function Dashboard() {
       // Create CSV rows in Shopify format
       const csvRows = []
       
-      // Add CSV header
+      // Shopify CSV headers in exact order as per documentation
       const headers = [
         'Handle', 'Title', 'Body (HTML)', 'Vendor', 'Product Category', 'Type', 'Tags', 'Published',
         'Option1 Name', 'Option1 Value', 'Option1 Linked To', 'Option2 Name', 'Option2 Value', 'Option2 Linked To',
@@ -80,7 +80,7 @@ export function Dashboard() {
         'Variant Fulfillment Service', 'Variant Price', 'Variant Compare At Price',
         'Variant Requires Shipping', 'Variant Taxable', 'Variant Barcode',
         'Image Src', 'Image Position', 'Image Alt Text', 'Gift Card', 'SEO Title', 'SEO Description',
-        'Benifits (product.metafields.custom.benifits)',
+        'Benefits (product.metafields.custom.benefits)',
         'Age group (product.metafields.shopify.age-group)',
         'Application method (product.metafields.shopify.application-method)',
         'Detailed ingredients (product.metafields.shopify.detailed-ingredients)',
@@ -92,58 +92,83 @@ export function Dashboard() {
       ]
       csvRows.push(headers.join(','))
 
+      // Helper function to safely format CSV values
+      const formatCSVValue = (value) => {
+        if (!value) return ''
+        const stringValue = String(value)
+        // Escape quotes and wrap in quotes if contains comma, quote, or newline
+        if (stringValue.includes('"') || stringValue.includes(',') || stringValue.includes('\n')) {
+          return `"${stringValue.replace(/"/g, '""')}"`
+        }
+        return stringValue
+      }
+
       // Process each product
       products.forEach(product => {
         // Parse image URLs from JSON if available
         const imageUrls = product['Image URLs'] ? JSON.parse(product['Image URLs']) : [product['Image Src']].filter(Boolean)
-        
-        // Main product row (first image)
+
+        // Main product row (first image) - following Shopify requirements
         const mainRow = [
-          product.Handle || '',
-          `"${(product.Title || '').replace(/"/g, '""')}"`,
-          `"${(product['Body (HTML)'] || '').replace(/"/g, '""')}"`,
-          product.Vendor || '',
-          product['Product Category'] || '',
-          product.Type || '',
-          `"${(product.Tags || '').replace(/"/g, '""')}"`,
-          product.Published ? 'true' : 'false',
-          '', '', '', '', '', '', '', '', '', // Options (empty)
-          product['Variant SKU'] || '',
-          product['Variant Grams'] || '0.0',
-          'shopify',
-          product['Variant Inventory Qty'] || '0',
-          'deny',
-          'manual',
-          product['Variant Price'] || '0.00',
-          product['Variant Compare At Price'] || '',
-          'true', 'true', '', // Shipping, Taxable, Barcode
-          imageUrls[0] || '',
-          '1',
-          `"${(product['Image Alt Text'] || '').replace(/"/g, '""')}"`,
-          'false',
-          `"${(product['SEO Title'] || '').replace(/"/g, '""')}"`,
-          `"${(product['SEO Description'] || '').replace(/"/g, '""')}"`,
-          `"${(product['Benifits (product.metafields.custom.benifits)'] || '').replace(/"/g, '""')}"`,
-          product['Age group (product.metafields.shopify.age-group)'] || '',
-          '', // Application method
-          `"${(product['Detailed ingredients (product.metafields.shopify.detailed-ingre'] || '').replace(/"/g, '""')}"`,
-          product['Dietary preferences (product.metafields.shopify.dietary-prefere'] || '',
-          product['Flavor (product.metafields.shopify.flavor)'] || '',
-          product['Ingredient category (product.metafields.shopify.ingredient-cate'] || '',
-          `"${(product['Product certifications & standards (product.metafields.shopify.'] || '').replace(/"/g, '""')}"`,
-          '', 'kg', '', '', // Variant Image, Weight Unit, Tax Code, Cost
-          product.Status || 'active'
+          product.Handle || '', // Required - auto-generated from title if blank
+          formatCSVValue(product.Title || ''), // Required
+          formatCSVValue(product['Body (HTML)'] || ''), // Optional
+          formatCSVValue(product.Vendor || ''), // Required - defaults to store name
+          formatCSVValue(product['AI Product Category'] || ''), // Optional - Shopify taxonomy
+          formatCSVValue(product.Type || 'Supplement'), // Optional
+          formatCSVValue(product.Tags || ''), // Optional
+          product.Published === false ? 'false' : 'true', // Required - defaults to true
+          'Title', // Option1 Name - Required, defaults to "Title"
+          'Default Title', // Option1 Value - Required, defaults to "Default Title"
+          '', // Option1 Linked To
+          '', // Option2 Name
+          '', // Option2 Value
+          '', // Option2 Linked To
+          '', // Option3 Name
+          '', // Option3 Value
+          '', // Option3 Linked To
+          product['Variant SKU'] || '', // Optional
+          product['Variant Grams'] || '0', // Required - defaults to 0.0
+          'shopify', // Variant Inventory Tracker
+          product['Variant Inventory Qty'] || '0', // Required - defaults to 0
+          'deny', // Required - deny/continue
+          'manual', // Required - defaults to manual
+          product['Variant Price'] || '0.00', // Required - defaults to 0.0
+          product['Variant Compare At Price'] || '', // Optional
+          'true', // Required - defaults to true (physical product)
+          'true', // Required - defaults to true (taxable)
+          '', // Variant Barcode - optional
+          imageUrls[0] || '', // Image Src
+          imageUrls[0] ? '1' : '', // Image Position - only if image exists
+          formatCSVValue(imageUrls[0] ? (product['Image Alt Text'] || product.Title || '') : ''), // Image Alt Text
+          'false', // Gift Card - Required, defaults to false
+          formatCSVValue(product['AI SEO Title'] || product.Title || ''), // SEO Title
+          formatCSVValue(product['AI SEO Description'] || ''), // SEO Description
+          // Metafields
+          formatCSVValue(product['AI Benefits'] || ''),
+          product['AI Age Group'] || 'Adult',
+          '', // Application method - not extracted by AI yet
+          formatCSVValue(product['AI Detailed Ingredients'] || ''),
+          product['AI Dietary Preferences'] || '',
+          product['AI Flavor'] || '',
+          product['AI How To Use'] || '', // Using as ingredient category for now
+          formatCSVValue(product['AI Certifications'] || ''),
+          '', // Variant Image
+          'kg', // Required - defaults to kg
+          '', // Variant Tax Code
+          '', // Cost per item
+          product.Status || 'active' // Required - defaults to active if present
         ]
         csvRows.push(mainRow.join(','))
 
-        // Additional image rows (positions 2, 3, 4...)
+        // Additional image rows (positions 2, 3, 4...) - Shopify requires separate rows for each image
         if (imageUrls.length > 1) {
           for (let i = 1; i < imageUrls.length; i++) {
             const imageRow = new Array(headers.length).fill('')
-            imageRow[0] = product.Handle || '' // Handle
-            imageRow[28] = imageUrls[i] // Image Src
-            imageRow[29] = (i + 1).toString() // Image Position
-            imageRow[30] = `"${(product.Title || '')} - Image ${i + 1}"` // Image Alt Text
+            imageRow[0] = product.Handle || '' // Handle - required for all rows
+            imageRow[28] = imageUrls[i] // Image Src - column index for Image Src
+            imageRow[29] = (i + 1).toString() // Image Position - sequential numbering
+            imageRow[30] = formatCSVValue(`${product.Title || 'Product'} - Image ${i + 1}`) // Image Alt Text
             csvRows.push(imageRow.join(','))
           }
         }
