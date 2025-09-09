@@ -44,6 +44,16 @@ export class ShopifyCSVExporter {
   }
 
   /**
+   * Generates a Shopify handle from a title
+   * @param {string} title - Product title
+   * @returns {string} - URL-safe handle
+   */
+  generateHandle(title) {
+    if (!title) return 'product-' + Date.now()
+    return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  }
+
+  /**
    * Parses image URLs from product data
    * @param {Object} product - Product data object
    * @returns {Array} - Array of image URLs
@@ -68,11 +78,16 @@ export class ShopifyCSVExporter {
    * @returns {Array} - CSV row array
    */
   createMainProductRow(product, imageUrls) {
+    // Generate fallback values for missing required fields
+    const title = product.Title || product.Handle || `${product.Vendor || 'Unknown'} Product` || 'Unnamed Product'
+    const handle = product.Handle || this.generateHandle(title)
+    const vendor = product.Vendor || 'Store Default'
+    
     return [
-      product.Handle || '', // Required - auto-generated from title if blank
-      this.formatCSVValue(product.Title || ''), // Required
+      handle, // Required - auto-generated from title if blank
+      this.formatCSVValue(title), // Required - with fallback
       this.formatCSVValue(product['Body (HTML)'] || ''), // Optional
-      this.formatCSVValue(product.Vendor || ''), // Required - defaults to store name
+      this.formatCSVValue(vendor), // Required - defaults to store name
       this.formatCSVValue(product['AI Product Category'] || ''), // Optional - Shopify taxonomy
       this.formatCSVValue(product.Type || 'Supplement'), // Optional
       this.formatCSVValue(product.Tags || ''), // Optional
@@ -99,9 +114,9 @@ export class ShopifyCSVExporter {
       '', // Variant Barcode - optional
       imageUrls[0] || '', // Image Src
       imageUrls[0] ? '1' : '', // Image Position - only if image exists
-      this.formatCSVValue(imageUrls[0] ? (product['Image Alt Text'] || product.Title || '') : ''), // Image Alt Text
+      this.formatCSVValue(imageUrls[0] ? (product['Image Alt Text'] || title || '') : ''), // Image Alt Text
       'false', // Gift Card - Required, defaults to false
-      this.formatCSVValue(product['AI SEO Title'] || product.Title || ''), // SEO Title
+      this.formatCSVValue(product['AI SEO Title'] || title || ''), // SEO Title
       this.formatCSVValue(product['AI SEO Description'] || ''), // SEO Description
       // Metafields
       this.formatCSVValue(product['AI Benefits'] || ''),
@@ -131,12 +146,15 @@ export class ShopifyCSVExporter {
     
     // Additional image rows (positions 2, 3, 4...) - Shopify requires separate rows for each image
     if (imageUrls.length > 1) {
+      const title = product.Title || product.Handle || `${product.Vendor || 'Unknown'} Product` || 'Unnamed Product'
+      const handle = product.Handle || this.generateHandle(title)
+      
       for (let i = 1; i < imageUrls.length; i++) {
         const imageRow = new Array(this.headers.length).fill('')
-        imageRow[0] = product.Handle || '' // Handle - required for all rows
+        imageRow[0] = handle // Handle - required for all rows
         imageRow[28] = imageUrls[i] // Image Src - column index for Image Src
         imageRow[29] = (i + 1).toString() // Image Position - sequential numbering
-        imageRow[30] = this.formatCSVValue(`${product.Title || 'Product'} - Image ${i + 1}`) // Image Alt Text
+        imageRow[30] = this.formatCSVValue(`${title} - Image ${i + 1}`) // Image Alt Text
         additionalRows.push(imageRow)
       }
     }
@@ -217,27 +235,32 @@ export class ShopifyCSVExporter {
     }
 
     products.forEach((product, index) => {
-      // Check required fields
-      if (!product.Title) {
-        errors.push(`Product ${index + 1}: Missing required Title field`)
-      }
-      
-      if (!product.Handle) {
-        warnings.push(`Product ${index + 1}: Missing Handle - will be auto-generated from Title`)
-      }
-      
-      if (!product.Vendor) {
-        warnings.push(`Product ${index + 1}: Missing Vendor - will use store default`)
+      // Check required fields with more lenient validation
+      if (!product.Title && !product.Handle && !product.Vendor) {
+        errors.push(`Product ${index + 1}: Missing all identifying fields (Title, Handle, Vendor) - cannot export`)
+      } else {
+        // Warnings for missing fields that can be auto-generated
+        if (!product.Title) {
+          warnings.push(`Product ${index + 1}: Missing Title - will use Handle or generate from Vendor`)
+        }
+        
+        if (!product.Handle) {
+          warnings.push(`Product ${index + 1}: Missing Handle - will be auto-generated from Title`)
+        }
+        
+        if (!product.Vendor) {
+          warnings.push(`Product ${index + 1}: Missing Vendor - will use store default`)
+        }
       }
 
-      // Check price format
+      // Check price format (non-blocking)
       if (product['Variant Price'] && isNaN(parseFloat(product['Variant Price']))) {
-        errors.push(`Product ${index + 1}: Invalid price format`)
+        warnings.push(`Product ${index + 1}: Invalid price format - will default to 0.00`)
       }
 
-      // Check weight format
+      // Check weight format (non-blocking)
       if (product['Variant Grams'] && isNaN(parseFloat(product['Variant Grams']))) {
-        errors.push(`Product ${index + 1}: Invalid weight format`)
+        warnings.push(`Product ${index + 1}: Invalid weight format - will default to 0`)
       }
     })
 
