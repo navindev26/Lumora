@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { ProductDetailsModal } from './ProductDetailsModal'
+import { csvExporter } from '../services/csvExporter'
 import { SearchIcon, PackageIcon, ShoppingCartIcon, DollarSignIcon, TrendingUpIcon, Sparkles, DownloadIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -63,132 +64,43 @@ export function Dashboard() {
     return `$${parseFloat(price).toFixed(2)}`
   }
 
-  // Export products to Shopify CSV format
-  const exportToShopifyCSV = () => {
+  // Export products to Shopify CSV format using the CSV service
+  const exportToShopifyCSV = async () => {
     try {
       toast.loading('Generating Shopify CSV...', { id: 'export-csv' })
 
-      // Create CSV rows in Shopify format
-      const csvRows = []
+      // Validate products before export
+      const validation = csvExporter.validateProducts(products)
       
-      // Shopify CSV headers in exact order as per documentation
-      const headers = [
-        'Handle', 'Title', 'Body (HTML)', 'Vendor', 'Product Category', 'Type', 'Tags', 'Published',
-        'Option1 Name', 'Option1 Value', 'Option1 Linked To', 'Option2 Name', 'Option2 Value', 'Option2 Linked To',
-        'Option3 Name', 'Option3 Value', 'Option3 Linked To', 'Variant SKU', 'Variant Grams',
-        'Variant Inventory Tracker', 'Variant Inventory Qty', 'Variant Inventory Policy',
-        'Variant Fulfillment Service', 'Variant Price', 'Variant Compare At Price',
-        'Variant Requires Shipping', 'Variant Taxable', 'Variant Barcode',
-        'Image Src', 'Image Position', 'Image Alt Text', 'Gift Card', 'SEO Title', 'SEO Description',
-        'Benefits (product.metafields.custom.benefits)',
-        'Age group (product.metafields.shopify.age-group)',
-        'Application method (product.metafields.shopify.application-method)',
-        'Detailed ingredients (product.metafields.shopify.detailed-ingredients)',
-        'Dietary preferences (product.metafields.shopify.dietary-preferences)',
-        'Flavor (product.metafields.shopify.flavor)',
-        'Ingredient category (product.metafields.shopify.ingredient-category)',
-        'Product certifications & standards (product.metafields.shopify.product-certifications-standards)',
-        'Variant Image', 'Variant Weight Unit', 'Variant Tax Code', 'Cost per item', 'Status'
-      ]
-      csvRows.push(headers.join(','))
-
-      // Helper function to safely format CSV values
-      const formatCSVValue = (value) => {
-        if (!value) return ''
-        const stringValue = String(value)
-        // Escape quotes and wrap in quotes if contains comma, quote, or newline
-        if (stringValue.includes('"') || stringValue.includes(',') || stringValue.includes('\n')) {
-          return `"${stringValue.replace(/"/g, '""')}"`
-        }
-        return stringValue
+      if (!validation.isValid) {
+        toast.error(`Export failed: ${validation.errors.join(', ')}`, { id: 'export-csv' })
+        return
       }
 
-      // Process each product
-      products.forEach(product => {
-        // Parse image URLs from JSON if available
-        const imageUrls = product['Image URLs'] ? JSON.parse(product['Image URLs']) : [product['Image Src']].filter(Boolean)
+      // Show warnings if any
+      if (validation.warnings.length > 0) {
+        console.warn('CSV Export warnings:', validation.warnings)
+      }
 
-        // Main product row (first image) - following Shopify requirements
-        const mainRow = [
-          product.Handle || '', // Required - auto-generated from title if blank
-          formatCSVValue(product.Title || ''), // Required
-          formatCSVValue(product['Body (HTML)'] || ''), // Optional
-          formatCSVValue(product.Vendor || ''), // Required - defaults to store name
-          formatCSVValue(product['AI Product Category'] || ''), // Optional - Shopify taxonomy
-          formatCSVValue(product.Type || 'Supplement'), // Optional
-          formatCSVValue(product.Tags || ''), // Optional
-          product.Published === false ? 'false' : 'true', // Required - defaults to true
-          'Title', // Option1 Name - Required, defaults to "Title"
-          'Default Title', // Option1 Value - Required, defaults to "Default Title"
-          '', // Option1 Linked To
-          '', // Option2 Name
-          '', // Option2 Value
-          '', // Option2 Linked To
-          '', // Option3 Name
-          '', // Option3 Value
-          '', // Option3 Linked To
-          product['Variant SKU'] || '', // Optional
-          product['Variant Grams'] || '0', // Required - defaults to 0.0
-          'shopify', // Variant Inventory Tracker
-          product['Variant Inventory Qty'] || '0', // Required - defaults to 0
-          'deny', // Required - deny/continue
-          'manual', // Required - defaults to manual
-          product['Variant Price'] || '0.00', // Required - defaults to 0.0
-          product['Variant Compare At Price'] || '', // Optional
-          'true', // Required - defaults to true (physical product)
-          'true', // Required - defaults to true (taxable)
-          '', // Variant Barcode - optional
-          imageUrls[0] || '', // Image Src
-          imageUrls[0] ? '1' : '', // Image Position - only if image exists
-          formatCSVValue(imageUrls[0] ? (product['Image Alt Text'] || product.Title || '') : ''), // Image Alt Text
-          'false', // Gift Card - Required, defaults to false
-          formatCSVValue(product['AI SEO Title'] || product.Title || ''), // SEO Title
-          formatCSVValue(product['AI SEO Description'] || ''), // SEO Description
-          // Metafields
-          formatCSVValue(product['AI Benefits'] || ''),
-          product['AI Age Group'] || 'Adult',
-          '', // Application method - not extracted by AI yet
-          formatCSVValue(product['AI Detailed Ingredients'] || ''),
-          product['AI Dietary Preferences'] || '',
-          product['AI Flavor'] || '',
-          product['AI How To Use'] || '', // Using as ingredient category for now
-          formatCSVValue(product['AI Certifications'] || ''),
-          '', // Variant Image
-          'kg', // Required - defaults to kg
-          '', // Variant Tax Code
-          '', // Cost per item
-          product.Status || 'active' // Required - defaults to active if present
-        ]
-        csvRows.push(mainRow.join(','))
-
-        // Additional image rows (positions 2, 3, 4...) - Shopify requires separate rows for each image
-        if (imageUrls.length > 1) {
-          for (let i = 1; i < imageUrls.length; i++) {
-            const imageRow = new Array(headers.length).fill('')
-            imageRow[0] = product.Handle || '' // Handle - required for all rows
-            imageRow[28] = imageUrls[i] // Image Src - column index for Image Src
-            imageRow[29] = (i + 1).toString() // Image Position - sequential numbering
-            imageRow[30] = formatCSVValue(`${product.Title || 'Product'} - Image ${i + 1}`) // Image Alt Text
-            csvRows.push(imageRow.join(','))
-          }
+      // Get export statistics
+      const stats = csvExporter.getExportStats(products)
+      
+      // Export to CSV with timestamped filename
+      const filename = `shopify-products-${new Date().toISOString().split('T')[0]}.csv`
+      const result = await csvExporter.exportToCSV(products, filename)
+      
+      toast.success(
+        `✅ Exported ${result.totalProducts} products (${result.totalRows} rows) to Shopify CSV`, 
+        { 
+          id: 'export-csv',
+          description: `${stats.totalImages} images total across ${stats.estimatedRows} CSV rows.`
         }
-      })
-
-      // Create and download CSV file
-      const csvContent = csvRows.join('\n')
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-      const link = document.createElement('a')
-      const url = URL.createObjectURL(blob)
-      link.setAttribute('href', url)
-      link.setAttribute('download', `shopify-products-${new Date().toISOString().split('T')[0]}.csv`)
-      link.style.visibility = 'hidden'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-
-      toast.success('Shopify CSV exported successfully!', {
-        id: 'export-csv',
-        description: `${products.length} products exported with ${products.reduce((sum, p) => sum + (p['Image URLs'] ? JSON.parse(p['Image URLs']).length : 1), 0)} images total.`
+      )
+      
+      console.log('Export completed:', {
+        ...result,
+        stats,
+        warnings: validation.warnings
       })
 
     } catch (error) {
